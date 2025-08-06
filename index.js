@@ -46,7 +46,7 @@ function generateTodaySchedule() {
   }
   const randomTimes = times.sort(() => 0.5 - Math.random()).slice(0, CHECKS_PER_DAY);
   dailyCheckTimes = randomTimes.sort();
-  console.log("✅ ตรวจรอบ WFH วันนี้:", dailyCheckTimes);
+  console.log("✅ ตรวจรอบ WFH วันนี:", dailyCheckTimes);
 }
 
 function isNowInCheckTimes() {
@@ -76,10 +76,8 @@ function handleCheckRound() {
     if (missed.length > 0) {
       bot.sendMessage(
         GROUP_CHAT_ID,
-        `⚠️ ไม่พบการตอบกลับรอบที่ ${roundNum} จาก:
-` +
-        missed.map(u => `• @${u.username || u.name}`).join("
-")
+        `⚠️ ไม่พบการตอบกลับรอบที่ ${roundNum} จาก:\n` +
+        missed.map(u => `• @${u.username || u.name}`).join("\n")
       );
     }
   }, CHECK_TIMEOUT_MS);
@@ -102,7 +100,7 @@ bot.on("message", (msg) => {
     hour12: false
   });
 
-  const hour = parseInt(timeStr.split(":")[0]);
+  const hour = parseInt(timeStr.split(":"[0]));
 
   if (!checkIn[userId]) {
     checkIn[userId] = timeStr;
@@ -137,18 +135,12 @@ function sendSummary() {
     const failRounds = record.map((r, i) => (!r ? i + 1 : null)).filter(Boolean);
 
     report.push(
-      `@${emp.username || emp.name}
-🔹 เข้างาน: ${inTime ? (lateIn[id] ? `🟡 สาย ${inTime}` : `✅ ${inTime}`) : "❌ ไม่พบ"}
-🔹 เลิกงาน: ${outTime ? `✅ ${outTime}` : "❌ ไม่พบ"}
-🔹 ตรวจ WFH: ${failRounds.length === 0 ? "✅ ครบ" : `❌ ขาดรอบ ${failRounds.join(", ")}`}`
+      `@${emp.username || emp.name}\n🔹 เข้างาน: ${inTime ? (lateIn[id] ? `🟡 สาย ${inTime}` : `✅ ${inTime}`) : "❌ ไม่พบ"}\n🔹 เลิกงาน: ${outTime ? `✅ ${outTime}` : "❌ ไม่พบ"}\n🔹 ตรวจ WFH: ${failRounds.length === 0 ? "✅ ครบ" : `❌ ขาดรอบ ${failRounds.join(", ")}`}`
     );
   }
 
-  report.push(`
-📌 ระบบจะสุ่มรอบใหม่พรุ่งนี้เวลา 09:59`);
-  bot.sendMessage(GROUP_CHAT_ID, report.join("
-
-"));
+  report.push(`\n📌 ระบบจะสุ่มรอบใหม่พรุ่งนี้เวลา 09:59`);
+  bot.sendMessage(GROUP_CHAT_ID, report.join("\n\n"));
 }
 
 function scheduleSummary() {
