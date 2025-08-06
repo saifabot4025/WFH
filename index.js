@@ -1,4 +1,4 @@
-// WFH Bot (Telegram) - Webhook Version with Perfected Logic
+// WFH Bot (Telegram) - Webhook Version with Perfected Logic + สรุปว่าเข้างานสาย
 import TelegramBot from "node-telegram-bot-api";
 import express from "express";
 import bodyParser from "body-parser";
@@ -27,6 +27,7 @@ let dailyCheckTimes = [];
 let dailyResult = {};    // { telegramId: [true/false/...]} 5 รอบ
 let checkIn = {};        // { telegramId: "09:45" }
 let checkOut = {};       // { telegramId: "20:12" }
+let lateIn = {};         // { telegramId: true }
 
 const ALLOWED_HOURS = [
   [10, 12],
@@ -50,7 +51,12 @@ function generateTodaySchedule() {
 
 function isNowInCheckTimes() {
   const now = new Date();
-  const current = now.toTimeString().slice(0, 5);
+  const current = now.toLocaleTimeString("th-TH", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
   return dailyCheckTimes.includes(current);
 }
 
@@ -91,12 +97,23 @@ bot.on("message", (msg) => {
   if (!emp) return;
 
   const now = new Date();
-  const hour = now.getHours();
-  const timeStr = now.toTimeString().slice(0, 5);
+  const timeStr = now.toLocaleTimeString("th-TH", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
 
-  if (hour < 10 && !checkIn[userId]) {
+  const hour = parseInt(timeStr.split(":"[0]));
+
+  if (!checkIn[userId]) {
     checkIn[userId] = timeStr;
-    bot.sendMessage(GROUP_CHAT_ID, `🟢 @${emp.username || emp.name} เข้างานแล้ว (${timeStr})`);
+    if (hour >= 10) {
+      lateIn[userId] = true;
+      bot.sendMessage(GROUP_CHAT_ID, `🟡 @${emp.username || emp.name} เข้างานสาย (${timeStr})`);
+    } else {
+      bot.sendMessage(GROUP_CHAT_ID, `🟢 @${emp.username || emp.name} เข้างานแล้ว (${timeStr})`);
+    }
   }
 
   if (hour >= 20 && hour <= 21 && !checkOut[userId]) {
@@ -111,7 +128,8 @@ bot.on("message", (msg) => {
 });
 
 function sendSummary() {
-  const report = [`📊 รายงาน WFH ประจำวันที่ ${new Date().toLocaleDateString("th-TH")}`];
+  const today = new Date().toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok" });
+  const report = [`📊 รายงาน WFH ประจำวันที่ ${today}`];
 
   for (const emp of employees) {
     const id = emp.telegramId;
@@ -123,7 +141,7 @@ function sendSummary() {
 
     report.push(
       `@${emp.username || emp.name}
-🔹 เข้างาน: ${inTime ? `✅ ${inTime}` : "❌ ไม่พบ"}
+🔹 เข้างาน: ${inTime ? `${lateIn[id] ? `🟡 สาย ${inTime}` : `✅ ${inTime}`}` : "❌ ไม่พบ"}
 🔹 เลิกงาน: ${outTime ? `✅ ${outTime}` : "❌ ไม่พบ"}
 🔹 ตรวจ WFH: ${failRounds.length === 0 ? "✅ ครบ" : `❌ ขาดรอบ ${failRounds.join(", ")}`}`
     );
@@ -151,6 +169,7 @@ function resetDaily() {
   checkIn = {};
   checkOut = {};
   dailyResult = {};
+  lateIn = {};
   currentRound = -1;
   generateTodaySchedule();
 }
