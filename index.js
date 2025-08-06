@@ -1,4 +1,4 @@
-// ใช้ Webhook แทน polling สำหรับ Deploy บน Render
+// WFH Bot (Telegram) - Webhook Version with Perfected Logic
 import TelegramBot from "node-telegram-bot-api";
 import express from "express";
 import bodyParser from "body-parser";
@@ -13,7 +13,6 @@ const URL = process.env.RENDER_EXTERNAL_URL || "https://your-app.onrender.com";
 const bot = new TelegramBot(BOT_TOKEN);
 const app = express();
 app.use(bodyParser.json());
-
 bot.setWebHook(`${URL}/bot${BOT_TOKEN}`);
 
 app.post(`/bot${BOT_TOKEN}`, (req, res) => {
@@ -25,7 +24,7 @@ const employees = JSON.parse(fs.readFileSync("./employees.json", "utf8"));
 
 let currentRound = -1;
 let dailyCheckTimes = [];
-let dailyResult = {};    // { telegramId: [true/false/...]}
+let dailyResult = {};    // { telegramId: [true/false/...]} 5 รอบ
 let checkIn = {};        // { telegramId: "09:45" }
 let checkOut = {};       // { telegramId: "20:12" }
 
@@ -44,38 +43,45 @@ function generateTodaySchedule() {
       }
     }
   }
-  const randomTimes = times.sort(() => Math.random() - 0.5).slice(0, CHECKS_PER_DAY);
+  const randomTimes = times.sort(() => 0.5 - Math.random()).slice(0, CHECKS_PER_DAY);
   dailyCheckTimes = randomTimes.sort();
+  console.log("✅ ตรวจรอบ WFH วันนี้:", dailyCheckTimes);
+}
+
+function isNowInCheckTimes() {
+  const now = new Date();
+  const current = now.toTimeString().slice(0, 5);
+  return dailyCheckTimes.includes(current);
+}
+
+function handleCheckRound() {
+  currentRound++;
+  const roundNum = currentRound + 1;
+
+  for (const emp of employees) {
+    if (!dailyResult[emp.telegramId]) dailyResult[emp.telegramId] = [];
+    dailyResult[emp.telegramId][currentRound] = false;
+  }
+
+  bot.sendMessage(
+    GROUP_CHAT_ID,
+    `\u23F0 [WFH CHECK - รอบที่ ${roundNum}/${CHECKS_PER_DAY}]\nกรุณาทุกคนพิมพ์ยืนยันการทำงานภายใน 10 นาที`
+  );
+
+  setTimeout(() => {
+    const missed = employees.filter(emp => !dailyResult[emp.telegramId][currentRound]);
+    if (missed.length > 0) {
+      bot.sendMessage(
+        GROUP_CHAT_ID,
+        `\u26A0\uFE0F ไม่พบการตอบกลับรอบที่ ${roundNum} จาก:\n` +
+          missed.map(u => `• @${u.username || u.name}`).join("\n")
+      );
+    }
+  }, CHECK_TIMEOUT_MS);
 }
 
 setInterval(() => {
-  const now = new Date();
-  const timeStr = now.toTimeString().slice(0, 5);
-
-  if (dailyCheckTimes.includes(timeStr)) {
-    currentRound++;
-    const roundNum = currentRound + 1;
-
-    for (const emp of employees) {
-      if (!dailyResult[emp.telegramId]) dailyResult[emp.telegramId] = [];
-      dailyResult[emp.telegramId][currentRound] = false;
-    }
-
-    bot.sendMessage(
-      GROUP_CHAT_ID,
-      `⏰ [WFH CHECK - รอบที่ ${roundNum}/5]\nกรุณาทุกคนพิมพ์ยืนยันการทำงานภายใน 10 นาที`
-    );
-
-    setTimeout(() => {
-      const missed = employees.filter(emp => !dailyResult[emp.telegramId][currentRound]);
-      if (missed.length > 0) {
-        bot.sendMessage(
-          GROUP_CHAT_ID,
-          `⚠️ ไม่พบการตอบกลับรอบที่ ${roundNum} จาก:\n${missed.map(u => "• @" + (u.username || u.name)).join("\n")}`
-        );
-      }
-    }, CHECK_TIMEOUT_MS);
-  }
+  if (isNowInCheckTimes()) handleCheckRound();
 }, 60 * 1000);
 
 bot.on("message", (msg) => {
