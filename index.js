@@ -1,13 +1,14 @@
-// ✅ WFH Bot (Telegram) – Webhook Version with Thai Timezone & Late Check-in Logic
+// ✅ WFH Bot (Telegram) – Thai Timezone + Stealth Round System
 import TelegramBot from "node-telegram-bot-api";
 import express from "express";
 import bodyParser from "body-parser";
 import fs from "fs";
+import { zonedTimeToUtc } from "date-fns-tz";
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID;
 const CHECKS_PER_DAY = 5;
-const CHECK_TIMEOUT_MS = 10 * 60 * 1000; // 10 นาที
+const CHECK_TIMEOUT_MS = 10 * 60 * 1000;
 const URL = process.env.RENDER_EXTERNAL_URL || "https://your-app.onrender.com";
 
 const bot = new TelegramBot(BOT_TOKEN);
@@ -40,13 +41,13 @@ function generateTodaySchedule() {
   for (const [start, end] of ALLOWED_HOURS) {
     for (let h = start; h < end; h++) {
       for (let m = 0; m < 60; m += 10) {
-        times.push(`${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`);
+        times.push(\`\${h.toString().padStart(2, "0")}:\${m.toString().padStart(2, "0")}\`);
       }
     }
   }
   const randomTimes = times.sort(() => 0.5 - Math.random()).slice(0, CHECKS_PER_DAY);
   dailyCheckTimes = randomTimes.sort();
-  console.log("✅ ตรวจรอบ WFH วันนี:", dailyCheckTimes);
+  console.log("✅ รอบตรวจสุ่มวันนี้:", dailyCheckTimes);
 }
 
 function isNowInCheckTimes() {
@@ -61,23 +62,23 @@ function isNowInCheckTimes() {
 
 function handleCheckRound() {
   currentRound++;
-  const roundNum = currentRound + 1;
   for (const emp of employees) {
     if (!dailyResult[emp.telegramId]) dailyResult[emp.telegramId] = [];
     dailyResult[emp.telegramId][currentRound] = false;
   }
   bot.sendMessage(
     GROUP_CHAT_ID,
-    `⏰ [WFH CHECK - รอบที่ ${roundNum}/${CHECKS_PER_DAY}]
-กรุณาทุกคนพิมพ์ยืนยันการทำงานภายใน 10 นาที`
+    \`⏰ แจ้งเตือนตรวจการทำงานรอบสุ่ม
+กรุณาพิมพ์ยืนยันการทำงานภายใน 10 นาที\`
   );
   setTimeout(() => {
     const missed = employees.filter(emp => !dailyResult[emp.telegramId][currentRound]);
     if (missed.length > 0) {
       bot.sendMessage(
         GROUP_CHAT_ID,
-        `⚠️ ไม่พบการตอบกลับรอบที่ ${roundNum} จาก:\n` +
-        missed.map(u => `• @${u.username || u.name}`).join("\n")
+        \`⚠️ ขาดการตอบกลับในรอบนี้จาก:
+\` +
+        missed.map(u => \`• @\${u.username || u.name}\`).join("\n")
       );
     }
   }, CHECK_TIMEOUT_MS);
@@ -100,32 +101,32 @@ bot.on("message", (msg) => {
     hour12: false
   });
 
-  const hour = parseInt(timeStr.split(":"[0]));
+  const hour = parseInt(timeStr.split(":")[0]);
 
   if (!checkIn[userId]) {
     checkIn[userId] = timeStr;
     if (hour >= 10) {
       lateIn[userId] = true;
-      bot.sendMessage(GROUP_CHAT_ID, `🟡 @${emp.username || emp.name} เข้างานสาย (${timeStr})`);
+      bot.sendMessage(GROUP_CHAT_ID, \`🟡 @\${emp.username || emp.name} เข้างานสาย (\${timeStr})\`);
     } else {
-      bot.sendMessage(GROUP_CHAT_ID, `🟢 @${emp.username || emp.name} เข้างานแล้ว (${timeStr})`);
+      bot.sendMessage(GROUP_CHAT_ID, \`🟢 @\${emp.username || emp.name} เข้างานแล้ว (\${timeStr})\`);
     }
   }
 
   if (hour >= 20 && hour <= 21 && !checkOut[userId]) {
     checkOut[userId] = timeStr;
-    bot.sendMessage(GROUP_CHAT_ID, `🔵 @${emp.username || emp.name} เลิกงานแล้ว (${timeStr})`);
+    bot.sendMessage(GROUP_CHAT_ID, \`🔵 @\${emp.username || emp.name} เลิกงานแล้ว (\${timeStr})\`);
   }
 
   if (currentRound !== -1 && dailyResult[userId]?.[currentRound] === false) {
     dailyResult[userId][currentRound] = true;
-    bot.sendMessage(GROUP_CHAT_ID, `✅ @${msg.from.username || emp.name} ตอบรอบ ${currentRound + 1} แล้ว`);
+    bot.sendMessage(GROUP_CHAT_ID, \`✅ @\${msg.from.username || emp.name} ยืนยันรอบนี้แล้ว\`);
   }
 });
 
 function sendSummary() {
   const today = new Date().toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok" });
-  const report = [`📊 รายงาน WFH ประจำวันที่ ${today}`];
+  const report = [\`📊 รายงานการทำงานประจำวันที่ \${today}\`];
 
   for (const emp of employees) {
     const id = emp.telegramId;
@@ -135,20 +136,25 @@ function sendSummary() {
     const failRounds = record.map((r, i) => (!r ? i + 1 : null)).filter(Boolean);
 
     report.push(
-      `@${emp.username || emp.name}\n🔹 เข้างาน: ${inTime ? (lateIn[id] ? `🟡 สาย ${inTime}` : `✅ ${inTime}`) : "❌ ไม่พบ"}\n🔹 เลิกงาน: ${outTime ? `✅ ${outTime}` : "❌ ไม่พบ"}\n🔹 ตรวจ WFH: ${failRounds.length === 0 ? "✅ ครบ" : `❌ ขาดรอบ ${failRounds.join(", ")}`}`
+      \`@\${emp.username || emp.name}
+🔹 เข้างาน: \${inTime ? (lateIn[id] ? \`🟡 สาย \${inTime}\` : \`✅ \${inTime}\`) : "❌ ไม่พบ"}
+🔹 เลิกงาน: \${outTime ? \`✅ \${outTime}\` : "❌ ไม่พบ"}
+🔹 การตอบสนอง: \${failRounds.length === 0 ? "✅ ครบ" : \`❌ ขาดรอบที่ \${failRounds.join(", ")}\`}\`
     );
   }
 
-  report.push(`\n📌 ระบบจะสุ่มรอบใหม่พรุ่งนี้เวลา 09:59`);
+  report.push(\`\n📌 ระบบจะสุ่มรอบใหม่อัตโนมัติในวันถัดไป\`);
   bot.sendMessage(GROUP_CHAT_ID, report.join("\n\n"));
 }
 
 function scheduleSummary() {
+  const timeZone = "Asia/Bangkok";
   const now = new Date();
-  const target = new Date();
-  target.setHours(21, 0, 0, 0);
-  if (now > target) target.setDate(target.getDate() + 1);
-  const delay = target - now;
+  const todayTarget = new Date();
+  todayTarget.setHours(21, 0, 0, 0);
+  const utcTarget = zonedTimeToUtc(todayTarget, timeZone);
+  if (now > utcTarget) utcTarget.setDate(utcTarget.getDate() + 1);
+  const delay = utcTarget.getTime() - now.getTime();
   setTimeout(() => {
     sendSummary();
     resetDaily();
