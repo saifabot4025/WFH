@@ -1,24 +1,34 @@
+// ใช้ Webhook แทน polling สำหรับ Deploy บน Render
 import TelegramBot from "node-telegram-bot-api";
+import express from "express";
+import bodyParser from "body-parser";
 import fs from "fs";
 
-// ===== ENV =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID;
 const CHECKS_PER_DAY = 5;
 const CHECK_TIMEOUT_MS = 10 * 60 * 1000; // 10 นาที
+const URL = process.env.RENDER_EXTERNAL_URL || "https://your-app.onrender.com";
 
-// ===== INIT =====
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(BOT_TOKEN);
+const app = express();
+app.use(bodyParser.json());
+
+bot.setWebHook(`${URL}/bot${BOT_TOKEN}`);
+
+app.post(`/bot${BOT_TOKEN}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
+
 const employees = JSON.parse(fs.readFileSync("./employees.json", "utf8"));
 
-// ===== STATE =====
 let currentRound = -1;
 let dailyCheckTimes = [];
 let dailyResult = {};    // { telegramId: [true/false/...]}
 let checkIn = {};        // { telegramId: "09:45" }
 let checkOut = {};       // { telegramId: "20:12" }
 
-// ===== TIME UTILS =====
 const ALLOWED_HOURS = [
   [10, 12],
   [13, 16],
@@ -34,12 +44,10 @@ function generateTodaySchedule() {
       }
     }
   }
-
   const randomTimes = times.sort(() => Math.random() - 0.5).slice(0, CHECKS_PER_DAY);
   dailyCheckTimes = randomTimes.sort();
 }
 
-// ===== CHECK EVERY MINUTE =====
 setInterval(() => {
   const now = new Date();
   const timeStr = now.toTimeString().slice(0, 5);
@@ -70,10 +78,8 @@ setInterval(() => {
   }
 }, 60 * 1000);
 
-// ===== HANDLE MESSAGE =====
 bot.on("message", (msg) => {
   if (msg.chat.id.toString() !== GROUP_CHAT_ID.toString()) return;
-
   const userId = msg.from.id;
   const emp = employees.find(e => e.telegramId === userId);
   if (!emp) return;
@@ -82,26 +88,22 @@ bot.on("message", (msg) => {
   const hour = now.getHours();
   const timeStr = now.toTimeString().slice(0, 5);
 
-  // เข้างาน
   if (hour < 10 && !checkIn[userId]) {
     checkIn[userId] = timeStr;
     bot.sendMessage(GROUP_CHAT_ID, `🟢 @${emp.username || emp.name} เข้างานแล้ว (${timeStr})`);
   }
 
-  // เลิกงาน
   if (hour >= 20 && hour <= 21 && !checkOut[userId]) {
     checkOut[userId] = timeStr;
     bot.sendMessage(GROUP_CHAT_ID, `🔵 @${emp.username || emp.name} เลิกงานแล้ว (${timeStr})`);
   }
 
-  // ตอบรอบ WFH
   if (currentRound !== -1 && dailyResult[userId]?.[currentRound] === false) {
     dailyResult[userId][currentRound] = true;
     bot.sendMessage(GROUP_CHAT_ID, `✅ @${msg.from.username || emp.name} ตอบรอบ ${currentRound + 1} แล้ว`);
   }
 });
 
-// ===== DAILY SUMMARY =====
 function sendSummary() {
   const report = [`📊 รายงาน WFH ประจำวันที่ ${new Date().toLocaleDateString("th-TH")}`];
 
@@ -149,3 +151,6 @@ function resetDaily() {
 
 resetDaily();
 scheduleSummary();
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log("✅ WFH Bot running on port", port));
